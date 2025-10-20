@@ -1,0 +1,66 @@
+services:
+  hyperf-app:
+    container_name: hyperf-app
+    image: hyperf-skeleton
+    build:
+      context: .
+    volumes:
+      - ./:/opt/www
+    ports:
+      - 9501:9501
+    environment:
+      - APP_ENV=dev
+      - SCAN_CACHEABLE=false
+      - DB_DRIVER=mysql
+      - DB_HOST=mysql
+      - DB_DATABASE=bot_financeiro
+      - DB_PORT=3306
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+      - REDIS_HOST=redis
+    depends_on:
+      - mysql
+      - rabbitmq
+      - redis
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=bot_financeiro
+    ports:
+      - 3307:3306
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+    ports:
+      - 5672:5672
+      - 15672:15672
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - 6379:6379
+  adminer:
+    image: adminer:4.8.1
+    container_name: adminer
+    ports:
+      - 8080:8080
+    environment:
+      - ADMINER_DEFAULT_SERVER=mysql
+
+networks:
+  default:
+    name: bot-financeiro-network
+volumes:
+  mysql-data:

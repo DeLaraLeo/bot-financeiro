@@ -1,0 +1,28 @@
+# Dependencies
+vendor/
+composer.lock
+
+# Runtime
+runtime/
+*.log
+
+# Environment
+.env
+!.env.example
+
+# Credentials
+credentials/service-account.json
+!credentials/service-account.json.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
