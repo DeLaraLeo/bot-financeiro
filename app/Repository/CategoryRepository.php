@@ -4,42 +4,52 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
-use Hyperf\DbConnection\Db;
+use App\Model\Category;
 
 class CategoryRepository
 {
     public function findById(int $id): ?array
     {
-        $result = Db::table('categories')->where('id', $id)->first();
-        return $result ? (array) $result : null;
+        $category = Category::find($id);
+        return $category ? $category->toArray() : null;
     }
 
     public function findByCode(string $code): ?array
     {
-        $result = Db::table('categories')->where('code', $code)->first();
-        return $result ? (array) $result : null;
+        $category = Category::where('code', $code)->first();
+        return $category ? $category->toArray() : null;
     }
 
     public function findAll(): array
     {
-        return Db::table('categories')
-            ->orderBy('name')
+        return Category::orderBy('name')
             ->get()
             ->toArray();
     }
 
     public function create(array $data): int
     {
-        return Db::table('categories')->insertGetId($data);
+        $category = Category::create($data);
+        return $category->id;
     }
 
     public function update(int $id, array $data): bool
     {
-        return Db::table('categories')->where('id', $id)->update($data) > 0;
+        $category = Category::find($id);
+        if (!$category) {
+            return false;
+        }
+        
+        return $category->update($data);
     }
 
     public function delete(int $id): bool
     {
-        return Db::table('categories')->where('id', $id)->delete() > 0;
+        $category = Category::find($id);
+        if (!$category) {
+            return false;
+        }
+        
+        return $category->delete();
     }
 }

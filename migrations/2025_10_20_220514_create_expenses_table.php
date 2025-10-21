@@ -19,8 +19,6 @@ return new class extends Migration
             $table->unsignedBigInteger('category_id')->nullable();
             $table->text('description')->nullable();
             $table->timestamp('occurred_at');
-            $table->string('status', 16)->default('confirmed');
-            $table->string('source_message_id')->unique();
             $table->timestamps();
             
             $table->foreign('user_id')->references('id')->on('users');

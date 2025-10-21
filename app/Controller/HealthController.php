@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\HttpServer\Contract\ResponseInterface;
 use App\Service\HealthService;
 
@@ -14,7 +13,7 @@ class HealthController
         private HealthService $healthService
     ) {}
 
-    public function index(RequestInterface $request, ResponseInterface $response)
+    public function index(ResponseInterface $response)
     {
         $status = $this->healthService->checkHealth();
         return $response->json($status);
