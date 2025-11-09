@@ -4,256 +4,130 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use Hyperf\Guzzle\ClientFactory;
-use Hyperf\Logger\LoggerFactory;
-use Psr\Log\LoggerInterface;
-use Google\Cloud\AIPlatform\V1\PredictionServiceClient;
-use Google\Cloud\AIPlatform\V1\PredictRequest;
-use Google\Cloud\AIPlatform\V1\Value;
-use Google\Cloud\AIPlatform\V1\Instance;
-use Hyperf\Config\Config;
+use App\Repository\CategoryRepository;
+use function Hyperf\Support\env;
 
 class AIService
 {
     public function __construct(
-        private ClientFactory $clientFactory,
-        private LoggerFactory $loggerFactory,
-        private Config $config
-    ) {
-        $this->logger = $loggerFactory->get('ai-service');
-    }
-
-    private LoggerInterface $logger;
+        private CategoryRepository $categoryRepository
+    ) {}
 
     public function classifyMessage(string $messageBody): array
     {
+        return $this->classifyWithOpenAI($messageBody);
+    }
+
+    private function classifyWithOpenAI(string $messageBody): array
+    {
+        $today = date('Y-m-d');
+        $categories = $this->getCategoriesForPrompt();
+        
+        $promptTemplate = \Hyperf\Config\config('ai_prompts.classification_prompt');
+        $prompt = $promptTemplate($messageBody, $today, $categories);
+        
         try {
-            return $this->classifyWithVertexAI($messageBody);
+            $response = $this->callOpenAI($prompt);
+            return $this->parseAnyResponse($response);
         } catch (\Exception $e) {
-            $this->logger->error('Vertex AI classification failed, using fallback', [
-                'error' => $e->getMessage(),
-                'message' => $messageBody
-            ]);
-            return $this->classifyWithHeuristics($messageBody);
-        }
-    }
-
-    private function classifyWithVertexAI(string $messageBody): array
-    {
-        $client = new PredictionServiceClient();
-        
-        $projectId = $this->config->get('vertex_ai.project_id', 'bot-financeiro-475714');
-        $location = $this->config->get('vertex_ai.location', 'us-central1');
-        $modelId = $this->config->get('vertex_ai.model_id', 'gemini-1.5-flash');
-        
-        $endpoint = $client->endpointName($projectId, $location, $modelId);
-        
-        $instance = new Instance();
-        $instance->setContent($this->buildPrompt($messageBody));
-        
-        $request = new PredictRequest();
-        $request->setEndpoint($endpoint);
-        $request->setInstances([$instance]);
-        
-        $response = $client->predict($request);
-        $predictions = $response->getPredictions();
-        
-        if (empty($predictions)) {
-            throw new \Exception('No predictions returned from Vertex AI');
-        }
-        
-        $prediction = $predictions[0];
-        $content = $prediction->getContent();
-        
-        return $this->parseAIResponse($content);
-    }
-
-    private function buildPrompt(string $messageBody): string
-    {
-        return "Analise a seguinte mensagem de WhatsApp e classifique a intenção do usuário:
-
-Mensagem: \"{$messageBody}\"
-
-Categorias possíveis:
-- expense_registration: usuário está registrando um gasto
-- query_expenses: usuário quer consultar seus gastos
-- list_categories: usuário quer listar categorias
-- greeting: saudação ou pedido de ajuda
-
-Responda APENAS em JSON no formato:
-{
-  \"intent\": \"categoria_detectada\",
-  \"confidence\": 0.95,
-  \"data\": {
-    \"amount_cents\": 5000,
-    \"description\": \"farmacia\",
-    \"category_hint\": \"farmacia\"
-  }
-}
-
-Se for expense_registration, extraia:
-- amount_cents: valor em centavos (ex: 50.50 = 5050)
-- description: descrição do gasto
-- category_hint: categoria sugerida (mercado, farmacia, combustivel, etc)
-
-Se não for expense_registration, data pode ser null.";
-    }
-
-    private function parseAIResponse(string $content): array
-    {
-        // Extract JSON from response
-        preg_match('/\{.*\}/s', $content, $matches);
-        if (empty($matches)) {
-            throw new \Exception('No JSON found in AI response');
-        }
-        
-        $json = json_decode($matches[0], true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('Invalid JSON in AI response: ' . json_last_error_msg());
-        }
-        
-        return $json;
-    }
-
-    private function classifyWithHeuristics(string $messageBody): array
-    {
-        $messageBody = strtolower(trim($messageBody));
-        
-        // Check if it's an expense registration
-        if (preg_match('/\d+[,.]?\d*/', $messageBody) && (
-            strpos($messageBody, 'gastei') !== false ||
-            strpos($messageBody, 'gasto') !== false ||
-            strpos($messageBody, 'paguei') !== false ||
-            strpos($messageBody, 'comprei') !== false ||
-            strpos($messageBody, 'reais') !== false
-        )) {
-            return $this->extractExpenseData($messageBody);
-        }
-
-        // Check if it's a query
-        if (strpos($messageBody, 'resumo') !== false || 
-            strpos($messageBody, 'gastos') !== false ||
-            strpos($messageBody, 'quanto') !== false) {
             return [
-                'intent' => 'query_expenses',
-                'confidence' => 0.9
+                'intent' => 'greeting',
+                'confidence' => 0.5,
+                'data' => []
             ];
         }
-
-        // Check if it's category request
-        if (strpos($messageBody, 'categorias') !== false) {
-            return [
-                'intent' => 'list_categories',
-                'confidence' => 0.9
-            ];
+    }
+    
+    private function parseAnyResponse(string $content): array
+    {
+        $json = $this->extractJsonFromResponse($content);
+        
+        if ($json && isset($json['intent'])) {
+            return $json;
         }
-
-        // Default to greeting/help
+        
         return [
             'intent' => 'greeting',
-            'confidence' => 0.7
+            'confidence' => 0.5,
+            'data' => []
         ];
     }
-
-    private function extractExpenseData(string $messageBody): array
+    
+    public function processNameMessage(string $messageBody): array
     {
-        // Extract amount
-        preg_match('/(\d+[,.]?\d*)/', $messageBody, $matches);
-        $amount = $matches[1] ?? null;
+        $promptTemplate = \Hyperf\Config\config('ai_prompts.name_extraction_prompt');
+        $prompt = $promptTemplate($messageBody);
         
-        if (!$amount) {
-            return [
-                'intent' => 'expense_registration',
-                'confidence' => 0.3,
-                'error' => 'Valor não encontrado'
-            ];
+        try {
+            $response = $this->callOpenAI($prompt);
+            $decoded = $this->extractJsonFromResponse($response);
+            
+            if ($decoded && isset($decoded['isName']) && isset($decoded['name'])) {
+                return [
+                    'isName' => (bool)$decoded['isName'],
+                    'name' => mb_convert_case(trim($decoded['name']), MB_CASE_TITLE, 'UTF-8')
+                ];
+            }
+            
+            return ['isName' => false, 'name' => trim($messageBody)];
+            
+        } catch (\Exception $e) {
+            return ['isName' => false, 'name' => trim($messageBody)];
         }
-
-        // Convert to cents
-        $amountCents = (int) (str_replace(',', '.', $amount) * 100);
-
-        // Extract description/merchant
-        $description = $this->extractDescription($messageBody);
-        
-        // Try to classify category
-        $category = $this->classifyCategory($messageBody);
-
-        return [
-            'intent' => 'expense_registration',
-            'confidence' => 0.9,
-            'data' => [
-                'amount_cents' => $amountCents,
-                'description' => $description,
-                'category_hint' => $category,
-                'raw_message' => $messageBody
-            ]
-        ];
     }
 
-    private function extractDescription(string $messageBody): ?string
+    private function callOpenAI(string $prompt): string
     {
-        // Remove amount and common words
-        $cleaned = preg_replace('/\d+[,.]?\d*/', '', $messageBody);
-        $cleaned = preg_replace('/\b(gastei|gasto|paguei|comprei|reais|com|na|no|em)\b/', '', $cleaned);
-        $cleaned = trim($cleaned);
+        $apiKey = env('OPENAI_API_KEY');
+        if (empty($apiKey)) {
+            throw new \RuntimeException('OPENAI_API_KEY is not configured');
+        }
         
-        return !empty($cleaned) ? $cleaned : null;
+        $client = \OpenAI::client($apiKey);
+        
+        $result = $client->completions()->create([
+            'model' => 'gpt-4o-mini',
+            'prompt' => $prompt,
+            'max_tokens' => 150,
+            'temperature' => 0.0,
+        ]);
+        
+        return trim($result->choices[0]->text);
     }
 
-    private function classifyCategory(string $messageBody): ?string
+    private function extractJsonFromResponse(string $response): ?array
     {
-        $categoryKeywords = [
-            'farmacia' => ['farmacia', 'farmacia', 'remedio', 'medicamento'],
-            'mercado' => ['mercado', 'supermercado', 'comida', 'alimento'],
-            'combustivel' => ['combustivel', 'gasolina', 'posto', 'abastecer'],
-            'restaurante' => ['restaurante', 'lanchonete', 'comer', 'almoço', 'jantar'],
-            'transporte' => ['transporte', 'uber', 'taxi', 'onibus', 'metro'],
-            'saude' => ['saude', 'medico', 'hospital', 'clinica'],
-            'lazer' => ['lazer', 'cinema', 'show', 'festa', 'diversao'],
-            'moradia' => ['moradia', 'aluguel', 'condominio', 'casa'],
-            'educacao' => ['educacao', 'curso', 'escola', 'faculdade'],
-            'assinaturas' => ['assinatura', 'netflix', 'spotify', 'plano']
-        ];
-
-        foreach ($categoryKeywords as $category => $keywords) {
-            foreach ($keywords as $keyword) {
-                if (strpos($messageBody, $keyword) !== false) {
-                    return $category;
-                }
+        $cleanResponse = trim($response);
+        
+        $json = json_decode($cleanResponse, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $json;
+        }
+        
+        if (preg_match('/\{.*\}/s', $cleanResponse, $matches)) {
+            $json = json_decode($matches[0], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $json;
             }
         }
-
+        
         return null;
     }
 
-    public function generateResponse(array $aiResult, array $context = []): string
+    private function getCategoriesForPrompt(): string
     {
-        switch ($aiResult['intent']) {
-            case 'expense_registration':
-                if (isset($aiResult['error'])) {
-                    return "❌ " . $aiResult['error'] . "\n\nPor favor, informe o valor do gasto. Exemplo: 'Gastei 25,50 no mercado'";
-                }
-                
-                $data = $aiResult['data'];
-                $amount = number_format($data['amount_cents'] / 100, 2, ',', '.');
-                $description = $data['description'] ? " - {$data['description']}" : "";
-                $category = $data['category_hint'] ? " ({$data['category_hint']})" : "";
-                
-                return "✅ Gasto registrado: R$ {$amount}{$description}{$category}";
-                
-            case 'query_expenses':
-                return "📊 Buscando seus gastos...";
-                
-            case 'list_categories':
-                return "📋 Listando categorias disponíveis...";
-                
-            case 'greeting':
-            default:
-                return "🤖 Olá! Sou seu assistente financeiro.\n\n" .
-                       "Comandos disponíveis:\n" .
-                       "• Registre gastos: 'Gastei 25,50 no mercado'\n" .
-                       "• Veja resumo: 'resumo dos gastos'\n" .
-                       "• Listar categorias: 'categorias'";
+        try {
+            $categories = $this->categoryRepository->findAll();
+            
+            $categoryList = [];
+            foreach ($categories as $category) {
+                $categoryList[] = "- ID {$category['id']}: {$category['name']} ({$category['code']})";
+            }
+            
+            return implode("\n", $categoryList);
+        } catch (\Exception $e) {
+            return "- ID 1: Mercado (mercado)\n- ID 2: Farmácia (farmacia)\n- ID 3: Transporte (transporte)\n- ID 4: Restaurante (restaurante)\n- ID 5: Outros (outros)";
         }
     }
+
 }

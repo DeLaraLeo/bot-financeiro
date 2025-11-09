@@ -24,8 +24,6 @@ class ExpenseService
             'category_id' => $data['category_id'] ?? null,
             'description' => $data['description'] ?? null,
             'occurred_at' => $data['occurred_at'] ?? Carbon::now(),
-            'status' => $data['status'] ?? 'confirmed',
-            'source_message_id' => $data['source_message_id'],
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ];
@@ -66,5 +64,10 @@ class ExpenseService
     public function getAllCategories(): array
     {
         return $this->categoryRepository->findAll();
+    }
+
+    public function getExpensesSummaryByCategory(int $userId, ?string $from = null, ?string $to = null, ?string $categoryFilter = null): array
+    {
+        return $this->expenseRepository->getSummaryByCategory($userId, $from, $to, $categoryFilter);
     }
 }

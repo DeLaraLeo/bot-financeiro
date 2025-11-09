@@ -14,6 +14,7 @@
     "require": {
         "php": ">=8.1",
         "google/cloud-ai-platform": "^1.40",
+        "hyperf/amqp": "^3.1",
         "hyperf/cache": "~3.1.0",
         "hyperf/command": "~3.1.0",
         "hyperf/config": "~3.1.0",
@@ -26,7 +27,8 @@
         "hyperf/logger": "~3.1.0",
         "hyperf/memory": "~3.1.0",
         "hyperf/process": "~3.1.0",
-        "hyperf/redis": "~3.1.0"
+        "hyperf/redis": "~3.1.0",
+        "openai-php/client": "^0.17.1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",

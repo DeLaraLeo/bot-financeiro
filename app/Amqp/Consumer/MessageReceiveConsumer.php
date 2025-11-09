@@ -8,44 +8,29 @@ use Hyperf\Amqp\Annotation\Consumer;
 use Hyperf\Amqp\Message\ConsumerMessage;
 use Hyperf\Amqp\Result;
 use App\Service\ConversationService;
-use Hyperf\Logger\LoggerFactory;
-use Psr\Log\LoggerInterface;
 
 #[Consumer(exchange: 'message', routingKey: 'receive', queue: 'q.message.receive', nums: 1)]
 class MessageReceiveConsumer extends ConsumerMessage
 {
     public function __construct(
-        private ConversationService $conversationService,
-        private LoggerFactory $loggerFactory
-    ) {
-        $this->logger = $loggerFactory->get('message-receive');
-    }
+        private ConversationService $conversationService
+    ) {}
 
-    private LoggerInterface $logger;
-
-    public function consumeMessage($data, \PhpAmqpLib\Message\AMQPMessage $message): string
+    public function consumeMessage($data, \PhpAmqpLib\Message\AMQPMessage $message): Result
     {
         try {
-            $this->logger->info('Received message', ['data' => $data]);
-
-            // Validate message structure
             if (!$this->validateMessage($data)) {
-                $this->logger->error('Invalid message structure', ['data' => $data]);
-                return Result::REJECT;
+                error_log("Message validation failed: " . json_encode($data));
+                return Result::ACK;
             }
-
-            // Process message through conversation service
+            
+            error_log("Processing message: " . json_encode($data));
             $this->conversationService->processIncomingMessage($data);
-
-            $this->logger->info('Message processed successfully');
             return Result::ACK;
 
         } catch (\Exception $e) {
-            $this->logger->error('Error processing message', [
-                'error' => $e->getMessage(),
-                'data' => $data
-            ]);
-            return Result::REJECT;
+            error_log("Error processing message: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return Result::ACK;
         }
     }
 

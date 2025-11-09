@@ -18,4 +18,14 @@ class MessageSendProducer extends ProducerMessage
         $this->payload = $data;
         return $this;
     }
+
+    public function getExchange(): string
+    {
+        return 'whatsapp.send';
+    }
+
+    public function getRoutingKey(): string
+    {
+        return 'send';
+    }
 }
