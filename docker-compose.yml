@@ -7,7 +7,7 @@ services:
     volumes:
       - ./:/opt/www
     ports:
-      - 9501:9501
+      - 8080:9501
     environment:
       - APP_ENV=dev
       - SCAN_CACHEABLE=false
@@ -27,6 +27,8 @@ services:
       - mysql
       - rabbitmq
       - redis
+    networks: 
+      - bot-financeiro-network    
   mysql:
     image: mysql:8.0
     container_name: mysql
@@ -38,6 +40,8 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     volumes:
       - mysql-data:/var/lib/mysql
+    networks:
+      - bot-financeiro-network
   rabbitmq:
     image: rabbitmq:3.12-management
     container_name: rabbitmq-bot-financeiro
@@ -47,23 +51,27 @@ services:
     ports:
       - 5672:5672
       - 15672:15672
-
+    networks:
+      - bot-financeiro-network
   redis:
     image: redis:7-alpine
     container_name: redis
     ports:
       - 6379:6379
+    networks:
+      - bot-financeiro-network
   adminer:
     image: adminer:4.8.1
     container_name: adminer
     ports:
-      - 8080:8080
+      - 8081:8080
     environment:
       - ADMINER_DEFAULT_SERVER=mysql
-
+    networks:
+      - bot-financeiro-network
 
 networks:
-  default:
-    name: bot-financeiro-network
+  bot-financeiro-network: 
+    external: true
 volumes:
   mysql-data:
